@@ -28,8 +28,6 @@ def get_player_stats(player_name):
 
     url = "https://sportdb.dev/api/v1/players"
 
-    print("API KEY:", API_KEY)
-
     headers = {
         "Authorization": f"Bearer {API_KEY}"
     }
@@ -38,20 +36,18 @@ def get_player_stats(player_name):
         "search": player_name
     }
 
-    print("🚀 Sending request...")
-
-    response = requests.get(url, headers=headers, params=params)
-
-    print("STATUS:", response.status_code)
-    print("RESPONSE TEXT:", response.text)
-
     try:
-        data = response.json()
-    except Exception as e:
-        print("❌ JSON ERROR:", e)
-        return None
+        print("🚀 Sending request...")
+        response = requests.get(url, headers=headers, params=params)
 
-    print("PARSED DATA:", data)
+        print("STATUS:", response.status_code)
+        print("RAW:", response.text)
+
+        data = response.json()
+
+    except Exception as e:
+        print("❌ ERROR:", e)
+        return None
 
     if not data or "data" not in data or len(data["data"]) == 0:
         return None
