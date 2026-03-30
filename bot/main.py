@@ -1,64 +1,92 @@
-import asyncio
 import discord
-from discord import app_commands
 from discord.ext import commands
-import requests
+from discord import app_commands
+import asyncio
+import soccerdata as sd
+import pandas as pd
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# ================= CONFIG =================
 
-GUILD_IDS = [
-    1396941278507307048,  # Server 1
-    741705713512087652,  # Server 2
-    1488233064575402175   # Server 3
-]
-
-TOKEN = os.getenv("DISCORD_TOKEN")
-API_KEY = os.getenv("SPORTDB_API_KEY")
+TOKEN = os.getenv("DISCORD_TOKEN")  # Railway env var
 
 intents = discord.Intents.default()
-intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ================= GLOBAL DATA =================
 
-# --------- HELPER FUNCTION ----------
-def get_player_stats(player_name):
-    print("⚡ FUNCTION CALLED:", player_name)
+player_df = None
 
-    url = f"https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p={player_name}"
+# ================= LOAD DATA =================
+
+def load_data():
+    global player_df
+
+    print("📦 Loading player data...")
 
     try:
-        res = requests.get(url)
+        fbref = sd.FBref()
 
-        print("STATUS:", res.status_code)
-        print("RAW:", res.text[:300])
+        # Load only top league for speed (can expand later)
+        df = fbref.read_player_season_stats(
+            leagues=["ENG-Premier League"]
+        )
 
-        data = res.json()
+        df = df.reset_index()
+
+        player_df = df
+
+        print("✅ Data loaded:", len(player_df))
 
     except Exception as e:
-        print("❌ ERROR:", e)
+        print("❌ Error loading data:", e)
+
+# ================= FETCH FUNCTION =================
+
+def get_player_stats(player_name):
+    global player_df
+
+    if player_df is None:
         return None
 
-    if not data or not data.get("player"):
+    players = player_df[
+        player_df["player"].str.contains(player_name, case=False, na=False)
+    ]
+
+    if players.empty:
         return None
 
-    player = data["player"][0]
+    p = players.iloc[0]
 
     return {
-        "name": player.get("strPlayer"),
-        "club": player.get("strTeam"),
-        "league": player.get("strLeague"),
-        "games": "N/A",
-        "goals": player.get("intGoals") or "N/A",
-        "assists": "N/A",
-        "yellow": "N/A",
-        "image": player.get("strThumb")
+        "name": p["player"],
+        "club": p.get("team", "Unknown"),
+        "league": p.get("league", "Unknown"),
+        "games": int(p.get("games", 0)),
+        "goals": int(p.get("goals", 0)),
+        "assists": int(p.get("assists", 0)),
+        "yellow": int(p.get("cards_yellow", 0)),
+        "image": None
     }
 
+# ================= EVENTS =================
 
-# --------- /stats COMMAND ----------
-@bot.tree.command(name="stats", description="Get player season stats")
+@bot.event
+async def on_ready():
+    print(f"🤖 Logged in as {bot.user}")
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} commands")
+    except Exception as e:
+        print("❌ Sync error:", e)
+
+    # Load data in background
+    await asyncio.to_thread(load_data)
+
+# ================= COMMAND =================
+
+@bot.tree.command(name="stats", description="Get player stats")
 async def stats(interaction: discord.Interaction, player: str):
 
     await interaction.response.send_message("⏳ Fetching player stats...")
@@ -72,13 +100,13 @@ async def stats(interaction: discord.Interaction, player: str):
         return
 
     embed = discord.Embed(
-        title=f"{data['name']}",
-        description=f"🏟️ {data['club']}  •  📊 {data['league']}",
+        title=data["name"],
+        description=f"🏟️ {data['club']} • 📊 {data['league']}",
         color=0x2b2d31
     )
 
     embed.add_field(
-        name="📈 Info",
+        name="📈 Season Stats",
         value=(
             f"**Goals:** {data['goals']}\n"
             f"**Matches:** {data['games']}\n"
@@ -88,23 +116,10 @@ async def stats(interaction: discord.Interaction, player: str):
         inline=False
     )
 
-    if data["image"] and str(data["image"]).startswith("http"):
-        embed.set_thumbnail(url=data["image"])
-
-    embed.set_footer(text="Powered by TheSportsDB")
+    embed.set_footer(text="Powered by FBref via soccerdata")
 
     await interaction.edit_original_response(content=None, embed=embed)
 
-# --------- READY EVENT ----------
-@bot.event
-async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} commands")
-    except Exception as e:
-        print(e)
+# ================= RUN =================
 
-    print(f"Logged in as {bot.user}")
-
-# --------- RUN ----------
 bot.run(TOKEN)
