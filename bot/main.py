@@ -21,7 +21,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-tree = app_commands.CommandTree(bot)
 
 # --------- HELPER FUNCTION ----------
 def get_player_stats(player_name):
@@ -63,7 +62,7 @@ def get_player_stats(player_name):
 
 
 # --------- /stats COMMAND ----------
-@tree.command(name="stats", description="Get player season stats")
+@bot.tree.command(name="stats", description="Get player season stats")
 async def stats(interaction: discord.Interaction, player: str):
 
     # ⚡ respond instantly (NO defer)
@@ -103,7 +102,7 @@ async def stats(interaction: discord.Interaction, player: str):
     # 🔁 edit instead of followup
     await interaction.edit_original_response(content=None, embed=embed)
 # --------- /aboutme COMMAND ----------
-@tree.command(name="aboutme", description="About the bot")
+@bot.tree.command(name="aboutme", description="About the bot")
 async def aboutme(interaction: discord.Interaction):
 
     embed = discord.Embed(
@@ -119,7 +118,7 @@ async def aboutme(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     try:
-        synced = await tree.sync()
+        synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} commands")
     except Exception as e:
         print(e)
