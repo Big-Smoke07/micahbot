@@ -51,6 +51,7 @@ def load_data():
 
 def get_player_stats(player_name):
     global player_df
+    print(player_df["player"].head(20))
 
     if player_df is None:
         return None
