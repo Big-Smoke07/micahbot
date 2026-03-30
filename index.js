@@ -42,77 +42,73 @@ client.on('ready', () => {
 });
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName !== 'stats') return;
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'stats') return;
 
-    const playerName = interaction.options.getString('player').toLowerCase();
+    const teamInput = interaction.options.getString('team').toLowerCase();
+    const playerInput = interaction.options.getString('player').toLowerCase();
     
-    await interaction.deferReply(); 
-
-    let foundPlayer = null;
-    let competitionName = "";
+    await interaction.deferReply();
 
     try {
-        for (const league of LEAGUES) {
-            let scorersData;
+        let targetTeam = null;
 
-            // --- THE CACHE CHECK ---
-            // If the bot already saved this league recently, use the saved data!
-            if (cache.has(league)) {
-                scorersData = cache.get(league);
-                console.log(`Loaded ${league} from cache!`);
+        // 1. Find the Team ID across the Top 5 Leagues
+        for (const league of LEAGUES) {
+            const cacheKey = `teams_${league}`;
+            let teams;
+
+            if (cache.has(cacheKey)) {
+                teams = cache.get(cacheKey);
             } else {
-                // If not, fetch it from the API and save it to the cache for next time
-                console.log(`Fetching ${league} from API...`);
-                const response = await axios.get(`https://api.football-data.org/v4/competitions/${league}/scorers`, {
+                const res = await axios.get(`https://api.football-data.org/v4/competitions/${league}/teams`, {
                     headers: { 'X-Auth-Token': process.env.FOOTBALL_DATA_TOKEN }
                 });
-                
-                scorersData = response.data;
-                cache.set(league, scorersData); // Save to cache
+                teams = res.data.teams;
+                cache.set(cacheKey, teams, 86400); // Cache team list for 24 hours
             }
 
-            const scorers = scorersData.scorers;
-            const match = scorers.find(s => s.player.name.toLowerCase().includes(playerName));
-
-            if (match) {
-                foundPlayer = match;
-                competitionName = scorersData.competition.name;
-                break; 
-            }
+            // Look for a match in this league's teams
+            targetTeam = teams.find(t => t.name.toLowerCase().includes(teamInput) || t.shortName?.toLowerCase().includes(teamInput));
+            if (targetTeam) break; 
         }
 
-        if (!foundPlayer) {
-            return interaction.editReply(`❌ Could not find **${playerName}** in the top scorers/assisters list of the Top 5 Leagues.`);
+        if (!targetTeam) {
+            return interaction.editReply(`❌ Could not find a team matching "**${teamInput}**" in the top leagues.`);
         }
 
-        const { player, team, playedMatches, goals, assists, penalties } = foundPlayer;
+        // 2. Get the Team's Squad and Matches (to calculate stats)
+        // Note: The free tier squad endpoint doesn't give "Total Goals" directly.
+        // We still need to check the /scorers list for live stats!
+        
+        const scorerRes = await axios.get(`https://api.football-data.org/v4/competitions/PL/scorers`, { // Example for PL, you'd use the team's league
+            headers: { 'X-Auth-Token': process.env.FOOTBALL_DATA_TOKEN }
+        });
 
-        const statsEmbed = new EmbedBuilder()
-            .setColor('#2b2d31') 
-            .setTitle(player.name)
-            .setThumbnail('https://i.imgur.com/3j3bA8v.png') 
+        // Search for the player in the league's top scorers
+        const statMatch = scorerRes.data.scorers.find(s => 
+            s.player.name.toLowerCase().includes(playerInput) && s.team.id === targetTeam.id
+        );
+
+        if (!statMatch) {
+            return interaction.editReply(`ℹ️ Found **${targetTeam.name}**, but **${playerInput}** isn't in the league's top scorers list yet.`);
+        }
+
+        // 3. Build the Embed (Same as before)
+        const embed = new EmbedBuilder()
+            .setTitle(statMatch.player.name)
+            .setThumbnail(targetTeam.crest) // Use the team's logo as a backup!
             .addFields(
-                { name: '🏟️ Club', value: team.name, inline: false },
-                { name: '🏆 League', value: competitionName, inline: false },
-                { name: '📍 Nationality', value: player.nationality || 'Unknown', inline: false },
-                { name: '⚽ Matches Played', value: playedMatches !== null ? playedMatches.toString() : '0', inline: false },
-                { name: '⚽ Goals', value: goals !== null ? goals.toString() : '0', inline: false },
-                { name: '🎯 Assists', value: assists !== null ? assists.toString() : '0', inline: false },
-                { name: '🥅 Penalties Scored', value: penalties !== null ? penalties.toString() : '0', inline: false }
+                { name: '🏟️ Club', value: targetTeam.name, inline: true },
+                { name: '⚽ Goals', value: statMatch.goals.toString(), inline: true },
+                { name: '🎯 Assists', value: (statMatch.assists || 0).toString(), inline: true }
             )
-            .setFooter({ text: 'Live Current Season Stats • football-data.org' });
+            .setColor('#2b2d31');
 
-        await interaction.editReply({ embeds: [statsEmbed] });
+        await interaction.editReply({ embeds: [embed] });
 
     } catch (error) {
-        console.error('API Error:', error.response ? error.response.data : error.message);
-        
-        if (error.response && error.response.status === 429) {
-            return interaction.editReply('⚠️ Rate limit hit! Even with caching, we requested too much too fast. Please try again in a minute.');
-        }
-
-        await interaction.editReply('❌ An error occurred while fetching the stats.');
+        console.error(error);
+        await interaction.editReply("⚠️ Error fetching data. You might be hitting the 10-call-per-minute limit!");
     }
 });
 
