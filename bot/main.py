@@ -24,7 +24,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --------- HELPER FUNCTION ----------
 def get_player_stats(player_name):
+    print("⚡ FUNCTION CALLED:", player_name)
+
     url = "https://sportdb.dev/api/v1/players/search"
+
+    print("API KEY:", API_KEY)
 
     headers = {
         "Authorization": f"Bearer {API_KEY}"
@@ -34,16 +38,21 @@ def get_player_stats(player_name):
         "name": player_name
     }
 
+    print("🚀 Sending request...")
+
     response = requests.get(url, headers=headers, params=params)
+
+    print("STATUS:", response.status_code)
+    print("RESPONSE TEXT:", response.text)
 
     try:
         data = response.json()
-    except:
+    except Exception as e:
+        print("❌ JSON ERROR:", e)
         return None
 
-    print("API RESPONSE:", data)  # DEBUG
+    print("PARSED DATA:", data)
 
-    # check if valid
     if not data or "data" not in data or len(data["data"]) == 0:
         return None
 
