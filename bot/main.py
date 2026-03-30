@@ -29,8 +29,14 @@ def load_data():
 
         # Load only top league for speed (can expand later)
         df = fbref.read_player_season_stats(
-            leagues=["ENG-Premier League"]
-        )
+    leagues=[
+        "ENG-Premier League",
+        "ESP-La Liga",
+        "ITA-Serie A",
+        "GER-Bundesliga",
+        "FRA-Ligue 1"
+    ]
+)
 
         df = df.reset_index()
 
