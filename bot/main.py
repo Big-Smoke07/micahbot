@@ -26,10 +26,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 def get_player_stats(player_name):
     print("⚡ FUNCTION CALLED:", player_name)
 
-    url = "https://sportdb.dev/api/v1/players"
+    url = "https://api.sportdb.dev/players"
 
     headers = {
-        "Authorization": f"Bearer {API_KEY}"
+        "X-API-Key": API_KEY
     }
 
     params = {
