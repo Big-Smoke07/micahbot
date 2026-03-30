@@ -24,44 +24,51 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --------- HELPER FUNCTION ----------
 def get_player_stats(player_name):
-    print("⚡ FUNCTION CALLED:", player_name)
-
-    url = "https://api.sportdb.dev/players"
-
     headers = {
         "X-API-Key": API_KEY
     }
 
-    params = {
-        "search": player_name
-    }
+    # STEP 1: search player
+    search_url = f"https://api.sportdb.dev/api/players/search/{player_name}"
+    res = requests.get(search_url, headers=headers)
 
-    try:
-        print("🚀 Sending request...")
-        response = requests.get(url, headers=headers, params=params)
+    print("SEARCH STATUS:", res.status_code)
 
-        print("STATUS:", response.status_code)
-        print("RAW:", response.text)
-
-        data = response.json()
-
-    except Exception as e:
-        print("❌ ERROR:", e)
+    if res.status_code != 200:
+        print(res.text)
         return None
 
-    if not data or "data" not in data or len(data["data"]) == 0:
+    data = res.json()
+    if not data:
         return None
 
-    player = data["data"][0]
+    player = data[0]
+    player_id = player["id"]
+
+    # STEP 2: get stats
+    stats_url = f"https://api.sportdb.dev/api/players/{player_id}/stats"
+    res2 = requests.get(stats_url, headers=headers)
+
+    print("STATS STATUS:", res2.status_code)
+
+    if res2.status_code != 200:
+        print(res2.text)
+        return None
+
+    stats_data = res2.json()
+    if not stats_data:
+        return None
+
+    stats = stats_data[0]
 
     return {
-        "name": player.get("name", "Unknown"),
-        "club": player.get("team", "Unknown"),
-        "league": player.get("league", "Unknown"),
-        "games": player.get("games", 0),
-        "goals": player.get("goals", 0),
-        "assists": player.get("assists", 0),
-        "yellow": player.get("yellowCards", 0),
+        "name": player.get("name"),
+        "club": stats.get("team"),
+        "league": stats.get("league"),
+        "games": stats.get("appearances"),
+        "goals": stats.get("goals"),
+        "assists": stats.get("assists"),
+        "yellow": stats.get("yellowCards"),
         "image": player.get("image")
     }
 
