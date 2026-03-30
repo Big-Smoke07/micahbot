@@ -18,8 +18,10 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 API_KEY = os.getenv("SPORTDB_API_KEY")
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+
+tree = app_commands.CommandTree(bot)
 
 # --------- HELPER FUNCTION ----------
 def get_player_stats(player_name):
@@ -100,7 +102,6 @@ async def stats(interaction: discord.Interaction, player: str):
 
     # 🔁 edit instead of followup
     await interaction.edit_original_response(content=None, embed=embed)
-    
 # --------- /aboutme COMMAND ----------
 @tree.command(name="aboutme", description="About the bot")
 async def aboutme(interaction: discord.Interaction):
@@ -117,17 +118,13 @@ async def aboutme(interaction: discord.Interaction):
 # --------- READY EVENT ----------
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-
     try:
-        for guild_id in GUILD_IDS:
-            guild = discord.Object(id=guild_id)
-            synced = await tree.sync(guild=guild)
-            print(f"✅ Synced {len(synced)} commands to {guild_id}")
-
+        synced = await tree.sync()
+        print(f"✅ Synced {len(synced)} commands")
     except Exception as e:
-        print(f"❌ Sync error: {e}")
+        print(e)
 
+    print(f"Logged in as {bot.user}")
 
 # --------- RUN ----------
 bot.run(TOKEN)
