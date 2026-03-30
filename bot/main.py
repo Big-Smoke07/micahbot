@@ -24,52 +24,36 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --------- HELPER FUNCTION ----------
 def get_player_stats(player_name):
-    headers = {
-        "X-API-Key": API_KEY
-    }
+    print("⚡ FUNCTION CALLED:", player_name)
 
-    # STEP 1: search player
-    search_url = f"https://api.sportdb.dev/api/players/search/{player_name}"
-    res = requests.get(search_url, headers=headers)
+    url = f"https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p={player_name}"
 
-    print("SEARCH STATUS:", res.status_code)
+    try:
+        res = requests.get(url)
 
-    if res.status_code != 200:
-        print(res.text)
+        print("STATUS:", res.status_code)
+        print("RAW:", res.text[:300])
+
+        data = res.json()
+
+    except Exception as e:
+        print("❌ ERROR:", e)
         return None
 
-    data = res.json()
-    if not data:
+    if not data or not data.get("player"):
         return None
 
-    player = data[0]
-    player_id = player["id"]
-
-    # STEP 2: get stats
-    stats_url = f"https://api.sportdb.dev/api/players/{player_id}/stats"
-    res2 = requests.get(stats_url, headers=headers)
-
-    print("STATS STATUS:", res2.status_code)
-
-    if res2.status_code != 200:
-        print(res2.text)
-        return None
-
-    stats_data = res2.json()
-    if not stats_data:
-        return None
-
-    stats = stats_data[0]
+    player = data["player"][0]
 
     return {
-        "name": player.get("name"),
-        "club": stats.get("team"),
-        "league": stats.get("league"),
-        "games": stats.get("appearances"),
-        "goals": stats.get("goals"),
-        "assists": stats.get("assists"),
-        "yellow": stats.get("yellowCards"),
-        "image": player.get("image")
+        "name": player.get("strPlayer"),
+        "club": player.get("strTeam"),
+        "league": player.get("strLeague"),
+        "games": "N/A",
+        "goals": player.get("intGoals") or "N/A",
+        "assists": "N/A",
+        "yellow": "N/A",
+        "image": player.get("strThumb")
     }
 
 
@@ -77,29 +61,27 @@ def get_player_stats(player_name):
 @bot.tree.command(name="stats", description="Get player season stats")
 async def stats(interaction: discord.Interaction, player: str):
 
-    # ⚡ respond instantly (NO defer)
     await interaction.response.send_message("⏳ Fetching player stats...")
 
-    # run blocking function safely
     data = await asyncio.to_thread(get_player_stats, player)
 
     if not data:
         await interaction.edit_original_response(
-            content="❌ Player retired / not in database"
+            content="❌ Player not found"
         )
         return
 
     embed = discord.Embed(
-        title=f"{data['name']} — Season Stats",
+        title=f"{data['name']}",
         description=f"🏟️ {data['club']}  •  📊 {data['league']}",
         color=0x2b2d31
     )
 
     embed.add_field(
-        name="📈 Performance",
+        name="📈 Info",
         value=(
-            f"**Matches Played:** {data['games']}\n"
             f"**Goals:** {data['goals']}\n"
+            f"**Matches:** {data['games']}\n"
             f"**Assists:** {data['assists']}\n"
             f"**Yellow Cards:** {data['yellow']}"
         ),
@@ -109,22 +91,9 @@ async def stats(interaction: discord.Interaction, player: str):
     if data["image"] and str(data["image"]).startswith("http"):
         embed.set_thumbnail(url=data["image"])
 
-    embed.set_footer(text="Season data • Powered by sportdb.dev")
+    embed.set_footer(text="Powered by TheSportsDB")
 
-    # 🔁 edit instead of followup
     await interaction.edit_original_response(content=None, embed=embed)
-# --------- /aboutme COMMAND ----------
-@bot.tree.command(name="aboutme", description="About the bot")
-async def aboutme(interaction: discord.Interaction):
-
-    embed = discord.Embed(
-        title="About Me",
-        description="Made by Big Smoke",
-        color=0x2b2d31
-    )
-
-    await interaction.response.send_message(embed=embed)
-
 
 # --------- READY EVENT ----------
 @bot.event
