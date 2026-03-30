@@ -42,61 +42,66 @@ client.on('ready', () => {
 });
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'stats') return;
+    // 1. Filter for Slash Commands
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== 'stats') return;
+
+    // 2. IMMEDIATELY Defer (Gives you 15 mins instead of 3 seconds)
+    try {
+        await interaction.deferReply(); 
+    } catch (e) {
+        console.error("Failed to defer:", e);
+        return;
+    }
 
     const teamInput = interaction.options.getString('team').toLowerCase();
     const playerInput = interaction.options.getString('player').toLowerCase();
-    
-    await interaction.deferReply();
 
     try {
         let targetTeam = null;
+        let leagueOfTeam = null;
 
-        // 1. Find the Team ID across the Top 5 Leagues
+        // Search for the team
         for (const league of LEAGUES) {
             const cacheKey = `teams_${league}`;
-            let teams;
+            let teams = cache.get(cacheKey);
 
-            if (cache.has(cacheKey)) {
-                teams = cache.get(cacheKey);
-            } else {
+            if (!teams) {
                 const res = await axios.get(`https://api.football-data.org/v4/competitions/${league}/teams`, {
                     headers: { 'X-Auth-Token': process.env.FOOTBALL_DATA_TOKEN }
                 });
                 teams = res.data.teams;
-                cache.set(cacheKey, teams, 86400); // Cache team list for 24 hours
+                cache.set(cacheKey, teams, 86400);
             }
 
-            // Look for a match in this league's teams
             targetTeam = teams.find(t => t.name.toLowerCase().includes(teamInput) || t.shortName?.toLowerCase().includes(teamInput));
-            if (targetTeam) break; 
+            if (targetTeam) {
+                leagueOfTeam = league;
+                break;
+            }
         }
 
         if (!targetTeam) {
-            return interaction.editReply(`❌ Could not find a team matching "**${teamInput}**" in the top leagues.`);
+            return interaction.editReply(`❌ Could not find team: **${teamInput}**`);
         }
 
-        // 2. Get the Team's Squad and Matches (to calculate stats)
-        // Note: The free tier squad endpoint doesn't give "Total Goals" directly.
-        // We still need to check the /scorers list for live stats!
-        
-        const scorerRes = await axios.get(`https://api.football-data.org/v4/competitions/PL/scorers`, { // Example for PL, you'd use the team's league
+        // Fetch scorers for that specific league
+        const scorerRes = await axios.get(`https://api.football-data.org/v4/competitions/${leagueOfTeam}/scorers`, {
             headers: { 'X-Auth-Token': process.env.FOOTBALL_DATA_TOKEN }
         });
 
-        // Search for the player in the league's top scorers
         const statMatch = scorerRes.data.scorers.find(s => 
             s.player.name.toLowerCase().includes(playerInput) && s.team.id === targetTeam.id
         );
 
         if (!statMatch) {
-            return interaction.editReply(`ℹ️ Found **${targetTeam.name}**, but **${playerInput}** isn't in the league's top scorers list yet.`);
+            return interaction.editReply(`ℹ️ Found **${targetTeam.name}**, but **${playerInput}** isn't in the league's top scorers list.`);
         }
 
-        // 3. Build the Embed (Same as before)
+        // Success Embed
         const embed = new EmbedBuilder()
             .setTitle(statMatch.player.name)
-            .setThumbnail(targetTeam.crest) // Use the team's logo as a backup!
+            .setThumbnail(targetTeam.crest)
             .addFields(
                 { name: '🏟️ Club', value: targetTeam.name, inline: true },
                 { name: '⚽ Goals', value: statMatch.goals.toString(), inline: true },
@@ -107,8 +112,14 @@ client.on('interactionCreate', async interaction => {
         await interaction.editReply({ embeds: [embed] });
 
     } catch (error) {
-        console.error(error);
-        await interaction.editReply("⚠️ Error fetching data. You might be hitting the 10-call-per-minute limit!");
+        console.error("Search Error:", error.message);
+        
+        // Handle Rate Limits specifically
+        if (error.response?.status === 429) {
+            return interaction.editReply("⚠️ Rate limit hit! The free API only allows 10 requests per minute. Try again in 30 seconds.");
+        }
+
+        await interaction.editReply("❌ An error occurred. Check the console for details.");
     }
 });
 
