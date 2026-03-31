@@ -1,7 +1,7 @@
 {
   "name": "football-stats-bot",
   "version": "1.0.0",
-  "description": "Discord bot for football stats",
+  "description": "Simple Discord bot for football player stats using SportDB.dev",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,8 +9,7 @@
   "dependencies": {
     "axios": "^1.6.0",
     "discord.js": "^14.13.0",
-    "dotenv": "^16.3.0",
-    "node-cache": "^5.1.2"
+    "dotenv": "^16.3.0"
   },
   "engines": {
     "node": "18.x"
