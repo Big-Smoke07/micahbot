@@ -10,6 +10,7 @@ const {
   ActivityType
 } = require("discord.js");
 const axios = require("axios");
+const blockedTerms = require("./blocked-terms");
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -82,6 +83,15 @@ function getStatValue(stats, names) {
   const normalizedNames = names.map(normalizeText);
   const match = stats.find((entry) => normalizedNames.includes(normalizeText(entry.name)));
   return match ? match.value : 0;
+}
+
+function isBlockedQuery(value) {
+  const normalizedQuery = normalizeText(value);
+
+  return blockedTerms.some((term) => {
+    const normalizedTerm = normalizeText(term);
+    return normalizedTerm && normalizedQuery.includes(normalizedTerm);
+  });
 }
 
 function tokenizeName(value) {
@@ -256,9 +266,15 @@ function buildEmbed(playerData, latestLeagueEntry) {
   const gamesPlayed = getStatValue(stats, ["matches played", "appearances", "matches"]);
   const goals = getStatValue(stats, ["goals scored", "goals"]);
   const assists = getStatValue(stats, ["assists"]);
+  const savePercentage = getStatValue(stats, ["save percentage"]);
+  const cleanSheets = getStatValue(stats, ["shutouts", "clean sheets"]);
   const yellowCards = getStatValue(stats, ["yellow cards", "yellow"]);
   const season = latestLeagueEntry?.season || "";
   const competition = latestLeagueEntry?.competitionName || "";
+  const isGoalkeeper = stats.some((entry) => {
+    const name = normalizeText(entry.name);
+    return name === "save percentage" || name === "shutouts" || name === "clean sheets";
+  });
 
   const embed = new EmbedBuilder()
     .setTitle(playerName)
@@ -266,8 +282,15 @@ function buildEmbed(playerData, latestLeagueEntry) {
     .setColor(0x1f8b4c)
     .addFields(
       { name: "Games Played", value: String(toNumber(gamesPlayed)), inline: true },
-      { name: "Goals", value: String(toNumber(goals)), inline: true },
-      { name: "Assists", value: String(toNumber(assists)), inline: true },
+      ...(isGoalkeeper
+        ? [
+            { name: "Clean Sheets", value: String(toNumber(cleanSheets)), inline: true },
+            { name: "Save %", value: String(toNumber(savePercentage)), inline: true }
+          ]
+        : [
+            { name: "Goals", value: String(toNumber(goals)), inline: true },
+            { name: "Assists", value: String(toNumber(assists)), inline: true }
+          ]),
       { name: "Yellow Cards", value: String(toNumber(yellowCards)), inline: true }
     );
 
@@ -325,6 +348,11 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   const playerName = interaction.options.getString("player", true).trim();
+
+  if (isBlockedQuery(playerName)) {
+    await safeReply(interaction, "That search term isn't allowed.");
+    return;
+  }
 
   try {
     await interaction.deferReply();
