@@ -24,7 +24,9 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !SPORTDB_API_KEY) {
   process.exit(1);
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
 
 const commands = [
   new SlashCommandBuilder()
@@ -445,6 +447,16 @@ client.once("clientReady", () => {
 
 client.on("error", (error) => {
   console.error("Discord client error:", error);
+});
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) {
+    return;
+  }
+
+  if (normalizeText(message.content) === "arsenal") {
+    await message.reply("bottlers");
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
