@@ -56,6 +56,13 @@ const PLAYER_ALIASES = {
   vini: { id: "CbwQ4Mws", url: "vinicius-junior", name: "Vinicius Junior" }
 };
 
+const SEARCH_CACHE_TTL_MS = 30 * 60 * 1000;
+const PLAYER_CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE = {
+  search: new Map(),
+  player: new Map()
+};
+
 function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
@@ -66,6 +73,10 @@ function normalizeText(value) {
     .trim();
 }
 
+function tokenizeName(value) {
+  return normalizeText(value).split(" ").filter(Boolean);
+}
+
 function toNumber(value) {
   if (value === undefined || value === null || value === "") {
     return 0;
@@ -73,6 +84,11 @@ function toNumber(value) {
 
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatPercent(value) {
+  const numeric = toNumber(value);
+  return Number.isInteger(numeric) ? `${numeric}%` : `${numeric.toFixed(1)}%`;
 }
 
 function getStatValue(stats, names) {
@@ -94,8 +110,25 @@ function isBlockedQuery(value) {
   });
 }
 
-function tokenizeName(value) {
-  return normalizeText(value).split(" ").filter(Boolean);
+function getCached(map, key) {
+  const cached = map.get(key);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() > cached.expiresAt) {
+    map.delete(key);
+    return null;
+  }
+
+  return cached.value;
+}
+
+function setCached(map, key, value, ttlMs) {
+  map.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs
+  });
 }
 
 function scoreSearchResult(item, query) {
@@ -142,7 +175,16 @@ function scoreSearchResult(item, query) {
     score += 40;
   }
 
-  if (teamNames.some((team) => team.includes("real madrid") || team.includes("manchester city") || team.includes("psg"))) {
+  if (
+    teamNames.some(
+      (team) =>
+        team.includes("real madrid") ||
+        team.includes("manchester city") ||
+        team.includes("psg") ||
+        team.includes("barcelona") ||
+        team.includes("arsenal")
+    )
+  ) {
     score += 1;
   }
 
@@ -172,8 +214,12 @@ function uniqueByLink(results) {
   const output = [];
 
   for (const item of results) {
+    if (!item) {
+      continue;
+    }
+
     const key = `${item.url || ""}:${item.id || ""}`;
-    if (!item || seen.has(key)) {
+    if (seen.has(key)) {
       continue;
     }
 
@@ -185,18 +231,75 @@ function uniqueByLink(results) {
 }
 
 function parseSeasonValue(season) {
-  const match = String(season || "").match(/\d{4}/);
-  return match ? Number(match[0]) : 0;
+  const matches = String(season || "").match(/\d{4}/g);
+  if (!matches || !matches.length) {
+    return 0;
+  }
+
+  return Number(matches[matches.length - 1]) || 0;
 }
 
-function chooseLatestLeagueEntry(leagues) {
-  if (!Array.isArray(leagues) || !leagues.length) {
+function getLatestSeason(entries) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return "";
+  }
+
+  return [...entries]
+    .filter((entry) => Array.isArray(entry.stats) && entry.stats.length > 0)
+    .sort((a, b) => parseSeasonValue(b.season) - parseSeasonValue(a.season))[0]?.season || "";
+}
+
+function aggregateStats(entries, statNames) {
+  return entries.reduce((total, entry) => total + toNumber(getStatValue(entry.stats, statNames)), 0);
+}
+
+function buildSeasonSummary(playerData) {
+  const careers = playerData.careers || {};
+  const allCompetitions = [
+    ...(careers.league || []),
+    ...(careers.nationalCups || []),
+    ...(careers.internationalCups || [])
+  ].filter((entry) => Array.isArray(entry.stats) && entry.stats.length > 0);
+
+  if (!allCompetitions.length) {
     return null;
   }
 
-  return [...leagues]
-    .filter((entry) => Array.isArray(entry.stats) && entry.stats.length > 0)
-    .sort((a, b) => parseSeasonValue(b.season) - parseSeasonValue(a.season))[0] || null;
+  const latestSeason = getLatestSeason(allCompetitions);
+  const seasonEntries = allCompetitions.filter((entry) => entry.season === latestSeason);
+
+  if (!seasonEntries.length) {
+    return null;
+  }
+
+  const isGoalkeeper = seasonEntries.some((entry) => {
+    return entry.stats.some((stat) => {
+      const statName = normalizeText(stat.name);
+      return statName === "save percentage" || statName === "shutouts" || statName === "clean sheets";
+    });
+  });
+
+  const competitionNames = [...new Set(seasonEntries.map((entry) => entry.competitionName).filter(Boolean))];
+  const teamName = seasonEntries.find((entry) => entry.teamName)?.teamName || playerData.teamName || "Unknown";
+
+  return {
+    season: latestSeason,
+    teamName,
+    competitionsLabel:
+      competitionNames.length > 1 ? "All Competitions" : competitionNames[0] || "Season Stats",
+    gamesPlayed: aggregateStats(seasonEntries, ["matches played", "appearances", "matches"]),
+    goals: aggregateStats(seasonEntries, ["goals scored", "goals"]),
+    assists: aggregateStats(seasonEntries, ["assists"]),
+    cleanSheets: aggregateStats(seasonEntries, ["shutouts", "clean sheets"]),
+    yellowCards: aggregateStats(seasonEntries, ["yellow cards", "yellow"]),
+    savePercentage:
+      seasonEntries.reduce((total, entry) => total + toNumber(getStatValue(entry.stats, ["save percentage"])), 0) /
+      Math.max(
+        seasonEntries.filter((entry) => toNumber(getStatValue(entry.stats, ["save percentage"])) > 0).length,
+        1
+      ),
+    isGoalkeeper
+  };
 }
 
 async function searchPlayers(playerName) {
@@ -206,16 +309,23 @@ async function searchPlayers(playerName) {
     return [aliasMatch];
   }
 
+  const cached = getCached(CACHE.search, normalizedPlayerName);
+  if (cached) {
+    return cached;
+  }
+
   const parts = tokenizeName(playerName);
   const queryVariants = uniqueByLink(
     [
       { q: playerName },
-      { q: normalizeText(playerName) },
+      { q: normalizedPlayerName },
       parts.length > 1 ? { q: parts.join(" ") } : null,
       parts.length > 1 ? { q: [...parts].reverse().join(" ") } : null,
       parts.length > 0 ? { q: parts[0] } : null,
       parts.length > 1 ? { q: parts[parts.length - 1] } : null
-    ].filter(Boolean).map((entry) => ({ url: entry.q, id: entry.q }))
+    ]
+      .filter(Boolean)
+      .map((entry) => ({ url: entry.q, id: entry.q }))
   ).map((entry) => entry.url);
 
   const aggregatedResults = [];
@@ -228,24 +338,33 @@ async function searchPlayers(playerName) {
     aggregatedResults.push(...(response.data.results || []));
   }
 
-  return rankSearchResults(uniqueByLink(aggregatedResults), playerName);
+  const ranked = rankSearchResults(uniqueByLink(aggregatedResults), playerName);
+  setCached(CACHE.search, normalizedPlayerName, ranked, SEARCH_CACHE_TTL_MS);
+  return ranked;
 }
 
 async function getPlayerDetails(slug, id) {
+  const cacheKey = `${slug}:${id}`;
+  const cached = getCached(CACHE.player, cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const response = await api.get(`/api/flashscore/player/${slug}/${id}`);
+  setCached(CACHE.player, cacheKey, response.data, PLAYER_CACHE_TTL_MS);
   return response.data;
 }
 
 async function resolvePlayerWithStats(playerName) {
   const candidates = await searchPlayers(playerName);
 
-  for (const candidate of candidates.slice(0, 12)) {
+  for (const candidate of candidates.slice(0, 8)) {
     try {
       const playerData = await getPlayerDetails(candidate.url, candidate.id);
-      const latestLeagueEntry = chooseLatestLeagueEntry(playerData.careers?.league);
+      const seasonSummary = buildSeasonSummary(playerData);
 
-      if (latestLeagueEntry) {
-        return { candidate, playerData, latestLeagueEntry };
+      if (seasonSummary) {
+        return { candidate, playerData, seasonSummary };
       }
     } catch (error) {
       if (error.response?.status === 404) {
@@ -259,50 +378,36 @@ async function resolvePlayerWithStats(playerName) {
   return null;
 }
 
-function buildEmbed(playerData, latestLeagueEntry) {
+function buildEmbed(playerData, seasonSummary) {
   const playerName = [playerData.firstName, playerData.lastName].filter(Boolean).join(" ") || "Unknown Player";
-  const stats = latestLeagueEntry?.stats || [];
-  const teamName = latestLeagueEntry?.teamName || playerData.teamName || "Unknown";
-  const gamesPlayed = getStatValue(stats, ["matches played", "appearances", "matches"]);
-  const goals = getStatValue(stats, ["goals scored", "goals"]);
-  const assists = getStatValue(stats, ["assists"]);
-  const savePercentage = getStatValue(stats, ["save percentage"]);
-  const cleanSheets = getStatValue(stats, ["shutouts", "clean sheets"]);
-  const yellowCards = getStatValue(stats, ["yellow cards", "yellow"]);
-  const season = latestLeagueEntry?.season || "";
-  const competition = latestLeagueEntry?.competitionName || "";
-  const isGoalkeeper = stats.some((entry) => {
-    const name = normalizeText(entry.name);
-    return name === "save percentage" || name === "shutouts" || name === "clean sheets";
-  });
 
   const embed = new EmbedBuilder()
     .setTitle(playerName)
-    .setDescription(`**Club:** ${teamName}`)
+    .setDescription(`**Club:** ${seasonSummary.teamName}`)
     .setColor(0x1f8b4c)
     .addFields(
-      { name: "Games Played", value: String(toNumber(gamesPlayed)), inline: true },
-      ...(isGoalkeeper
+      { name: "Games Played", value: String(toNumber(seasonSummary.gamesPlayed)), inline: true },
+      ...(seasonSummary.isGoalkeeper
         ? [
-            { name: "Clean Sheets", value: String(toNumber(cleanSheets)), inline: true },
-            { name: "Save %", value: String(toNumber(savePercentage)), inline: true }
+            { name: "Clean Sheets", value: String(toNumber(seasonSummary.cleanSheets)), inline: true },
+            { name: "Save %", value: formatPercent(seasonSummary.savePercentage), inline: true }
           ]
         : [
-            { name: "Goals", value: String(toNumber(goals)), inline: true },
-            { name: "Assists", value: String(toNumber(assists)), inline: true }
+            { name: "Goals", value: String(toNumber(seasonSummary.goals)), inline: true },
+            { name: "Assists", value: String(toNumber(seasonSummary.assists)), inline: true }
           ]),
-      { name: "Yellow Cards", value: String(toNumber(yellowCards)), inline: true }
+      { name: "Yellow Cards", value: String(toNumber(seasonSummary.yellowCards)), inline: true }
     );
 
   if (playerData.photo) {
     embed.setThumbnail(playerData.photo);
   }
 
-  if (season || competition || teamName) {
-    embed.setFooter({
-      text: [season, competition, teamName].filter(Boolean).join(" • ")
-    });
-  }
+  embed.setFooter({
+    text: [seasonSummary.season, seasonSummary.competitionsLabel, seasonSummary.teamName]
+      .filter(Boolean)
+      .join(" • ")
+  });
 
   return embed;
 }
@@ -373,7 +478,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const embed = buildEmbed(resolved.playerData, resolved.latestLeagueEntry);
+    const embed = buildEmbed(resolved.playerData, resolved.seasonSummary);
     await safeReply(interaction, { embeds: [embed] });
   } catch (error) {
     console.error("Stats command failed:", error.response?.data || error.message);
