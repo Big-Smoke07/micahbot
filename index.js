@@ -58,11 +58,21 @@ const PLAYER_ALIASES = {
   vini: { id: "CbwQ4Mws", url: "vinicius-junior", name: "Vinicius Junior" }
 };
 
+const ALLOWED_GUILD_IDS = new Set([
+  "741705713512087652",
+  "1488233064575402175",
+  "1396941278507307048"
+]);
+
+const RESTRICTED_SERVER_MESSAGE = "Sorry this bot is exclusively made for Markaroni server";
+
 const SEARCH_CACHE_TTL_MS = 30 * 60 * 1000;
 const PLAYER_CACHE_TTL_MS = 60 * 60 * 1000;
+const TEAM_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE = {
   search: new Map(),
-  player: new Map()
+  player: new Map(),
+  team: new Map()
 };
 
 function normalizeText(value) {
@@ -110,6 +120,10 @@ function isBlockedQuery(value) {
     const normalizedTerm = normalizeText(term);
     return normalizedTerm && normalizedQuery.includes(normalizedTerm);
   });
+}
+
+function isAllowedGuildId(guildId) {
+  return Boolean(guildId) && ALLOWED_GUILD_IDS.has(guildId);
 }
 
 function getCached(map, key) {
@@ -357,6 +371,53 @@ async function getPlayerDetails(slug, id) {
   return response.data;
 }
 
+async function getTeamDetails(teamSlug, teamId) {
+  if (!teamSlug || !teamId) {
+    return null;
+  }
+
+  const cacheKey = `${teamSlug}:${teamId}`;
+  const cached = getCached(CACHE.team, cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const response = await api.get(`/api/flashscore/team/${teamSlug}/${teamId}`);
+    setCached(CACHE.team, cacheKey, response.data, TEAM_CACHE_TTL_MS);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404 || error.response?.status === 401 || error.response?.status === 403) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function extractClubLogo(teamData) {
+  if (!teamData || typeof teamData !== "object") {
+    return null;
+  }
+
+  const candidateKeys = ["logo", "image", "badge", "crest", "photo"];
+  for (const key of candidateKeys) {
+    const value = teamData[key];
+    if (typeof value === "string" && value.startsWith("http")) {
+      return value;
+    }
+  }
+
+  if (Array.isArray(teamData.images)) {
+    const image = teamData.images.find((value) => typeof value === "string" && value.startsWith("http"));
+    if (image) {
+      return image;
+    }
+  }
+
+  return null;
+}
+
 async function resolvePlayerWithStats(playerName) {
   const candidates = await searchPlayers(playerName);
 
@@ -366,7 +427,13 @@ async function resolvePlayerWithStats(playerName) {
       const seasonSummary = buildSeasonSummary(playerData);
 
       if (seasonSummary) {
-        return { candidate, playerData, seasonSummary };
+        const teamData = await getTeamDetails(playerData.teamSlug, playerData.teamId);
+        return {
+          candidate,
+          playerData,
+          seasonSummary,
+          clubLogo: extractClubLogo(teamData)
+        };
       }
     } catch (error) {
       if (error.response?.status === 404) {
@@ -380,7 +447,7 @@ async function resolvePlayerWithStats(playerName) {
   return null;
 }
 
-function buildEmbed(playerData, seasonSummary) {
+function buildEmbed(playerData, seasonSummary, clubLogo) {
   const playerName = [playerData.firstName, playerData.lastName].filter(Boolean).join(" ") || "Unknown Player";
 
   const embed = new EmbedBuilder()
@@ -403,6 +470,13 @@ function buildEmbed(playerData, seasonSummary) {
 
   if (playerData.photo) {
     embed.setThumbnail(playerData.photo);
+  }
+
+  if (clubLogo) {
+    embed.setAuthor({
+      name: seasonSummary.teamName,
+      iconURL: clubLogo
+    });
   }
 
   embed.setFooter({
@@ -454,6 +528,11 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  if (!isAllowedGuildId(message.guildId)) {
+    await message.reply(RESTRICTED_SERVER_MESSAGE);
+    return;
+  }
+
   if (normalizeText(message.content) === "arsenal") {
     await message.reply("bottlers");
   }
@@ -461,6 +540,11 @@ client.on("messageCreate", async (message) => {
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand() || interaction.commandName !== "stats") {
+    return;
+  }
+
+  if (!isAllowedGuildId(interaction.guildId)) {
+    await safeReply(interaction, RESTRICTED_SERVER_MESSAGE);
     return;
   }
 
@@ -490,7 +574,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const embed = buildEmbed(resolved.playerData, resolved.seasonSummary);
+    const embed = buildEmbed(resolved.playerData, resolved.seasonSummary, resolved.clubLogo);
     await safeReply(interaction, { embeds: [embed] });
   } catch (error) {
     console.error("Stats command failed:", error.response?.data || error.message);
