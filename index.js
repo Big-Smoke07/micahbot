@@ -535,6 +535,11 @@ client.on("messageCreate", async (message) => {
 
   if (normalizeText(message.content) === "arsenal") {
     await message.reply("bottlers");
+    return;
+  }
+
+  if (normalizeText(message.content) === "barca") {
+    await message.reply("Choke me till m red");
   }
 });
 
