@@ -540,6 +540,11 @@ client.on("messageCreate", async (message) => {
 
   if (normalizeText(message.content) === "barca") {
     await message.reply("Choke me till m red");
+    return;
+  }
+
+  if (["real madrid", "realmadrid"].includes(normalizeText(message.content))) {
+    await message.reply("Shh..Mbappe is listening");
   }
 });
 
