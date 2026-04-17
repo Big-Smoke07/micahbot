@@ -547,10 +547,6 @@ client.on("messageCreate", async (message) => {
     await message.reply("Shh..Mbappe is listening");
     return;
   }
-
-  if (normalizeText(message.content) === "veto") {
-    await message.reply("lund pe mat baj");
-  }
 });
 
 client.on("interactionCreate", async (interaction) => {
