@@ -547,6 +547,21 @@ client.on("messageCreate", async (message) => {
     await message.reply("Shh..Mbappe is listening");
     return;
   }
+
+  if (["tottenham hotspur", "tottenham", "spurs"].includes(normalizeText(message.content))) {
+    await message.reply("Audi Cup heritage");
+    return;
+  }
+
+  if (normalizeText(message.content) === "atletico madrid") {
+    await message.reply("Great wall of madrid");
+    return;
+  }
+
+  if (normalizeText(message.content) === "mancity") {
+    await message.reply("Google our charges");
+    return;
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
