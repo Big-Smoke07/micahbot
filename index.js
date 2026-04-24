@@ -38,6 +38,12 @@ const commands = [
         .setDescription("Footballer name, for example Harry Kane")
         .setRequired(true)
     )
+    .addStringOption((option) =>
+      option
+        .setName("team")
+        .setDescription("Optional club name, for example Manchester United")
+        .setRequired(false)
+    )
     .toJSON()
 ];
 
@@ -147,9 +153,11 @@ function setCached(map, key, value, ttlMs) {
   });
 }
 
-function scoreSearchResult(item, query) {
+function scoreSearchResult(item, query, teamQuery = "") {
   const queryText = normalizeText(query);
   const queryParts = tokenizeName(query);
+  const normalizedTeamQuery = normalizeText(teamQuery);
+  const teamQueryParts = tokenizeName(teamQuery);
   const nameText = normalizeText(item.name);
   const nameParts = tokenizeName(item.name);
   const reversedNameText = [...nameParts].reverse().join(" ");
@@ -204,15 +212,29 @@ function scoreSearchResult(item, query) {
     score += 1;
   }
 
+  if (normalizedTeamQuery) {
+    if (teamNames.some((team) => team === normalizedTeamQuery)) {
+      score += 200;
+    } else if (teamNames.some((team) => team.includes(normalizedTeamQuery) || normalizedTeamQuery.includes(team))) {
+      score += 120;
+    }
+
+    for (const part of teamQueryParts) {
+      if (teamNames.some((team) => team.includes(part))) {
+        score += 20;
+      }
+    }
+  }
+
   return score;
 }
 
-function rankSearchResults(results, query) {
+function rankSearchResults(results, query, teamQuery = "") {
   return results
     .filter((item) => item.type === "player")
     .map((item) => ({
       item,
-      score: scoreSearchResult(item, query),
+      score: scoreSearchResult(item, query, teamQuery),
       nameLength: normalizeText(item.name).length || 999
     }))
     .sort((a, b) => {
@@ -318,14 +340,16 @@ function buildSeasonSummary(playerData) {
   };
 }
 
-async function searchPlayers(playerName) {
+async function searchPlayers(playerName, teamName = "") {
   const normalizedPlayerName = normalizeText(playerName);
+  const normalizedTeamName = normalizeText(teamName);
   const aliasMatch = PLAYER_ALIASES[normalizedPlayerName];
-  if (aliasMatch) {
+  if (aliasMatch && !normalizedTeamName) {
     return [aliasMatch];
   }
 
-  const cached = getCached(CACHE.search, normalizedPlayerName);
+  const searchCacheKey = `${normalizedPlayerName}|${normalizedTeamName}`;
+  const cached = getCached(CACHE.search, searchCacheKey);
   if (cached) {
     return cached;
   }
@@ -354,8 +378,8 @@ async function searchPlayers(playerName) {
     aggregatedResults.push(...(response.data.results || []));
   }
 
-  const ranked = rankSearchResults(uniqueByLink(aggregatedResults), playerName);
-  setCached(CACHE.search, normalizedPlayerName, ranked, SEARCH_CACHE_TTL_MS);
+  const ranked = rankSearchResults(uniqueByLink(aggregatedResults), playerName, teamName);
+  setCached(CACHE.search, searchCacheKey, ranked, SEARCH_CACHE_TTL_MS);
   return ranked;
 }
 
@@ -418,8 +442,40 @@ function extractClubLogo(teamData) {
   return null;
 }
 
-async function resolvePlayerWithStats(playerName) {
-  const candidates = await searchPlayers(playerName);
+function scoreResolvedPlayer(playerData, seasonSummary, teamName = "") {
+  const normalizedTeamName = normalizeText(teamName);
+  if (!normalizedTeamName) {
+    return 0;
+  }
+
+  const values = [
+    playerData.teamName,
+    playerData.teamSlug,
+    seasonSummary.teamName
+  ]
+    .filter(Boolean)
+    .map(normalizeText);
+
+  let score = 0;
+
+  if (values.some((value) => value === normalizedTeamName)) {
+    score += 200;
+  } else if (values.some((value) => value.includes(normalizedTeamName) || normalizedTeamName.includes(value))) {
+    score += 120;
+  }
+
+  for (const part of tokenizeName(teamName)) {
+    if (values.some((value) => value.includes(part))) {
+      score += 20;
+    }
+  }
+
+  return score;
+}
+
+async function resolvePlayerWithStats(playerName, teamName = "") {
+  const candidates = await searchPlayers(playerName, teamName);
+  const resolvedCandidates = [];
 
   for (const candidate of candidates.slice(0, 8)) {
     try {
@@ -428,12 +484,13 @@ async function resolvePlayerWithStats(playerName) {
 
       if (seasonSummary) {
         const teamData = await getTeamDetails(playerData.teamSlug, playerData.teamId);
-        return {
+        resolvedCandidates.push({
           candidate,
           playerData,
           seasonSummary,
-          clubLogo: extractClubLogo(teamData)
-        };
+          clubLogo: extractClubLogo(teamData),
+          teamScore: scoreResolvedPlayer(playerData, seasonSummary, teamName)
+        });
       }
     } catch (error) {
       if (error.response?.status === 404) {
@@ -444,7 +501,12 @@ async function resolvePlayerWithStats(playerName) {
     }
   }
 
-  return null;
+  if (!resolvedCandidates.length) {
+    return null;
+  }
+
+  resolvedCandidates.sort((a, b) => b.teamScore - a.teamScore);
+  return resolvedCandidates[0];
 }
 
 function buildEmbed(playerData, seasonSummary, clubLogo) {
@@ -562,6 +624,41 @@ client.on("messageCreate", async (message) => {
     await message.reply("Google our charges");
     return;
   }
+
+  if (normalizeText(message.content) === "juventus") {
+    await message.reply("points deducted before kickoff");
+    return;
+  }
+
+  if (normalizeText(message.content) === "liverpool") {
+    await message.reply("You built a whole era just to be Real Madrid’s highlight reel");
+    return;
+  }
+
+  if (normalizeText(message.content) === "chelsea") {
+    await message.reply("More players than points in the league");
+    return;
+  }
+
+  if (normalizeText(message.content) === "napoli") {
+    await message.reply("That title aged like milk");
+    return;
+  }
+
+  if (["ac milan", "milan"].includes(normalizeText(message.content))) {
+    await message.reply("You made '3-0 lead' sound like a joke");
+    return;
+  }
+
+  if (normalizeText(message.content) === "inter milan") {
+    await message.reply("UCL final booked… trophy cancelled");
+    return;
+  }
+
+  if (normalizeText(message.content) === "brazil") {
+    await message.reply("5 stars on the badge, 7 goals in memory");
+    return;
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
@@ -575,6 +672,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   const playerName = interaction.options.getString("player", true).trim();
+  const teamName = interaction.options.getString("team")?.trim() || "";
 
   if (isBlockedQuery(playerName)) {
     await safeReply(interaction, "That search term isn't allowed.");
@@ -593,7 +691,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   try {
-    const resolved = await resolvePlayerWithStats(playerName);
+    const resolved = await resolvePlayerWithStats(playerName, teamName);
 
     if (!resolved) {
       await safeReply(interaction, `No footballer with usable stats was found for "${playerName}".`);
