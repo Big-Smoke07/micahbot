@@ -147,17 +147,48 @@ function getRandomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function findRoastReply(clubName) {
+function findRoast(clubName) {
   const normalizedClubName = normalizeText(clubName);
 
   for (const club of Object.values(roasts)) {
     const normalizedAliases = club.aliases.map(normalizeText);
     if (normalizedAliases.includes(normalizedClubName)) {
-      return getRandomItem(club.replies);
+      return {
+        club,
+        reply: getRandomItem(club.replies)
+      };
     }
   }
 
   return null;
+}
+
+function getClubLogoUrl(club) {
+  return club.logoDomain ? `https://logo.clearbit.com/${club.logoDomain}` : null;
+}
+
+function getInteractionDisplayName(interaction) {
+  return interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+}
+
+function buildRoastEmbed(club, reply, interaction) {
+  const displayName = club.displayName || club.aliases[0] || "Football Club";
+  const requestedBy = getInteractionDisplayName(interaction);
+  const embed = new EmbedBuilder()
+    .setTitle(`${displayName} Roast`)
+    .setDescription(reply)
+    .setColor(0xd72638)
+    .setFooter({
+      text: `Roast by ${requestedBy}`,
+      iconURL: interaction.user.displayAvatarURL()
+    });
+
+  const logoUrl = getClubLogoUrl(club);
+  if (logoUrl) {
+    embed.setThumbnail(logoUrl);
+  }
+
+  return embed;
 }
 
 function getCached(map, key) {
@@ -631,8 +662,14 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const roastReply = findRoastReply(clubName);
-    await safeReply(interaction, roastReply || `I do not have roasts for "${clubName}" yet.`);
+    const roast = findRoast(clubName);
+    if (!roast) {
+      await safeReply(interaction, `I do not have roasts for "${clubName}" yet.`);
+      return;
+    }
+
+    const embed = buildRoastEmbed(roast.club, roast.reply, interaction);
+    await safeReply(interaction, { embeds: [embed] });
     return;
   }
 

@@ -1,5 +1,7 @@
 module.exports = {
   arsenal: {
+    displayName: "Arsenal",
+    logoDomain: "arsenal.com",
     aliases: ["arsenal", "gunners"],
     replies: [
       "bottlers",
@@ -16,6 +18,8 @@ module.exports = {
     ]
   },
   chelsea: {
+    displayName: "Chelsea",
+    logoDomain: "chelseafc.com",
     aliases: ["chelsea", "cfc", "the blues"],
     replies: [
       "More players than points in the league",
@@ -32,6 +36,8 @@ module.exports = {
     ]
   },
   manchesterUnited: {
+    displayName: "Manchester United",
+    logoDomain: "manutd.com",
     aliases: ["manchester united", "man united", "man utd", "manutd", "united", "mu", "mufc"],
     replies: [
       "The Glazers' cash cow that hasn't won the league since smartphones were new.",
@@ -47,6 +53,8 @@ module.exports = {
     ]
   },
   manchesterCity: {
+    displayName: "Manchester City",
+    logoDomain: "mancity.com",
     aliases: ["manchester city", "man city", "mancity", "city", "mcfc"],
     replies: [
       "Google our charges",
@@ -63,6 +71,8 @@ module.exports = {
     ]
   },
   liverpool: {
+    displayName: "Liverpool",
+    logoDomain: "liverpoolfc.com",
     aliases: ["liverpool", "lfc", "reds"],
     replies: [
       "You built a whole era just to be Real Madrid's highlight reel",
@@ -79,6 +89,8 @@ module.exports = {
     ]
   },
   tottenham: {
+    displayName: "Tottenham Hotspur",
+    logoDomain: "tottenhamhotspur.com",
     aliases: ["tottenham hotspur", "tottenham", "spurs", "thfc"],
     replies: [
       "Audi Cup heritage",
@@ -95,6 +107,8 @@ module.exports = {
     ]
   },
   newcastleUnited: {
+    displayName: "Newcastle United",
+    logoDomain: "newcastleunited.com",
     aliases: ["newcastle united", "newcastle", "nufc", "toon", "the toon"],
     replies: [
       "Saudi money arrived, trophy cabinet still empty.",
@@ -110,6 +124,8 @@ module.exports = {
     ]
   },
   astonVilla: {
+    displayName: "Aston Villa",
+    logoDomain: "avfc.co.uk",
     aliases: ["aston villa", "villa", "avfc"],
     replies: [
       "Emery's project looking good until they face actual big teams.",
@@ -125,6 +141,8 @@ module.exports = {
     ]
   },
   realMadrid: {
+    displayName: "Real Madrid",
+    logoDomain: "realmadrid.com",
     aliases: ["real madrid", "realmadrid", "madrid", "rm", "rmcf"],
     replies: [
       "Shh..Mbappe is listening",
@@ -141,6 +159,8 @@ module.exports = {
     ]
   },
   barcelona: {
+    displayName: "Barcelona",
+    logoDomain: "fcbarcelona.com",
     aliases: ["barcelona", "barca", "fcb"],
     replies: [
       "Choke me till m red",
@@ -157,6 +177,8 @@ module.exports = {
     ]
   },
   bayernMunich: {
+    displayName: "Bayern Munich",
+    logoDomain: "fcbayern.com",
     aliases: ["bayern munich", "bayern", "fcbayern"],
     replies: [
       "Bundesliga champions... by March every year.",
@@ -172,6 +194,8 @@ module.exports = {
     ]
   },
   psg: {
+    displayName: "PSG",
+    logoDomain: "psg.fr",
     aliases: ["psg", "paris saint-germain", "paris saint germain", "paris"],
     replies: [
       "Qatar-funded superteam that chokes in Europe.",
@@ -187,6 +211,8 @@ module.exports = {
     ]
   },
   juventus: {
+    displayName: "Juventus",
+    logoDomain: "juventus.com",
     aliases: ["juventus", "juve"],
     replies: [
       "points deducted before kickoff",
@@ -203,6 +229,8 @@ module.exports = {
     ]
   },
   atleticoMadrid: {
+    displayName: "Atletico Madrid",
+    logoDomain: "atleticodemadrid.com",
     aliases: ["atletico madrid", "atletico", "atleti"],
     replies: [
       "Great wall of madrid",
@@ -219,30 +247,40 @@ module.exports = {
     ]
   },
   ajax: {
+    displayName: "Ajax",
+    logoDomain: "ajax.nl",
     aliases: ["ajax", "afc ajax"],
     replies: [
       "Johan Cruyff's club playing anti-Cruyff football."
     ]
   },
   napoli: {
+    displayName: "Napoli",
+    logoDomain: "sscnapoli.it",
     aliases: ["napoli", "ssc napoli"],
     replies: [
       "That title aged like milk"
     ]
   },
   acMilan: {
+    displayName: "AC Milan",
+    logoDomain: "acmilan.com",
     aliases: ["ac milan", "milan"],
     replies: [
       "You made '3-0 lead' sound like a joke"
     ]
   },
   interMilan: {
+    displayName: "Inter Milan",
+    logoDomain: "inter.it",
     aliases: ["inter milan", "inter"],
     replies: [
       "UCL final booked... trophy cancelled"
     ]
   },
   brazil: {
+    displayName: "Brazil",
+    logoDomain: "cbf.com.br",
     aliases: ["brazil", "brasil"],
     replies: [
       "5 stars on the badge, 7 goals in memory"
