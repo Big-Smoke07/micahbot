@@ -11,6 +11,7 @@ const {
 } = require("discord.js");
 const axios = require("axios");
 const blockedTerms = require("./blocked-terms");
+const roasts = require("./roasts");
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -25,7 +26,7 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !SPORTDB_API_KEY) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [GatewayIntentBits.Guilds]
 });
 
 const commands = [
@@ -43,6 +44,16 @@ const commands = [
         .setName("team")
         .setDescription("Optional club name, for example Manchester United")
         .setRequired(false)
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("roast")
+    .setDescription("Roast a football club")
+    .addStringOption((option) =>
+      option
+        .setName("club")
+        .setDescription("Club name, for example Arsenal")
+        .setRequired(true)
     )
     .toJSON()
 ];
@@ -130,6 +141,23 @@ function isBlockedQuery(value) {
 
 function isAllowedGuildId(guildId) {
   return Boolean(guildId) && ALLOWED_GUILD_IDS.has(guildId);
+}
+
+function getRandomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function findRoastReply(clubName) {
+  const normalizedClubName = normalizeText(clubName);
+
+  for (const club of Object.values(roasts)) {
+    const normalizedAliases = club.aliases.map(normalizeText);
+    if (normalizedAliases.includes(normalizedClubName)) {
+      return getRandomItem(club.replies);
+    }
+  }
+
+  return null;
 }
 
 function getCached(map, key) {
@@ -544,7 +572,7 @@ function buildEmbed(playerData, seasonSummary, clubLogo) {
   embed.setFooter({
     text: [seasonSummary.season, seasonSummary.competitionsLabel, seasonSummary.teamName]
       .filter(Boolean)
-      .join(" • ")
+      .join(" - ")
   });
 
   return embed;
@@ -585,89 +613,30 @@ client.on("error", (error) => {
   console.error("Discord client error:", error);
 });
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) {
-    return;
-  }
-
-  if (!isAllowedGuildId(message.guildId)) {
-    await message.reply(RESTRICTED_SERVER_MESSAGE);
-    return;
-  }
-
-  if (normalizeText(message.content) === "arsenal") {
-    await message.reply("bottlers");
-    return;
-  }
-
-  if (normalizeText(message.content) === "barca") {
-    await message.reply("Choke me till m red");
-    return;
-  }
-
-  if (["real madrid", "realmadrid"].includes(normalizeText(message.content))) {
-    await message.reply("Shh..Mbappe is listening");
-    return;
-  }
-
-  if (["tottenham hotspur", "tottenham", "spurs"].includes(normalizeText(message.content))) {
-    await message.reply("Audi Cup heritage");
-    return;
-  }
-
-  if (normalizeText(message.content) === "atletico madrid") {
-    await message.reply("Great wall of madrid");
-    return;
-  }
-
-  if (normalizeText(message.content) === "mancity") {
-    await message.reply("Google our charges");
-    return;
-  }
-
-  if (normalizeText(message.content) === "juventus") {
-    await message.reply("points deducted before kickoff");
-    return;
-  }
-
-  if (normalizeText(message.content) === "liverpool") {
-    await message.reply("You built a whole era just to be Real Madrid’s highlight reel");
-    return;
-  }
-
-  if (normalizeText(message.content) === "chelsea") {
-    await message.reply("More players than points in the league");
-    return;
-  }
-
-  if (normalizeText(message.content) === "napoli") {
-    await message.reply("That title aged like milk");
-    return;
-  }
-
-  if (["ac milan", "milan"].includes(normalizeText(message.content))) {
-    await message.reply("You made '3-0 lead' sound like a joke");
-    return;
-  }
-
-  if (normalizeText(message.content) === "inter milan") {
-    await message.reply("UCL final booked… trophy cancelled");
-    return;
-  }
-
-  if (normalizeText(message.content) === "brazil") {
-    await message.reply("5 stars on the badge, 7 goals in memory");
-    return;
-  }
-});
-
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand() || interaction.commandName !== "stats") {
+  if (!interaction.isChatInputCommand()) {
     return;
   }
 
   if (!isAllowedGuildId(interaction.guildId)) {
     await safeReply(interaction, RESTRICTED_SERVER_MESSAGE);
+    return;
+  }
+
+  if (interaction.commandName === "roast") {
+    const clubName = interaction.options.getString("club", true).trim();
+
+    if (isBlockedQuery(clubName)) {
+      await safeReply(interaction, "That club name isn't allowed.");
+      return;
+    }
+
+    const roastReply = findRoastReply(clubName);
+    await safeReply(interaction, roastReply || `I do not have roasts for "${clubName}" yet.`);
+    return;
+  }
+
+  if (interaction.commandName !== "stats") {
     return;
   }
 
