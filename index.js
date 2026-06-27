@@ -240,7 +240,7 @@ async function askGeminiFootball(question) {
           parts: [
             {
               text:
-                "You are a football-only Discord assistant. Answer questions about football tactics, clubs, players, history, rules, transfers, and debates. If a question is not about football, briefly say you can only answer football questions. Do not use slurs, abusive insults, sexual content, threats, hate, harassment, or tragedy jokes. Do not present live stats as certain unless the user provided them. Keep answers under 180 words."
+                "You are a football-only Discord assistant. Answer questions about football tactics, clubs, players, history, rules, transfers, and debates. If a question is not about football, briefly say you can only answer football questions. Do not use slurs, abusive insults, sexual content, threats, hate, harassment, or tragedy jokes. Do not present live stats as certain unless the user provided them. Keep answers under 120 words and always end with a complete sentence."
             }
           ]
         },
@@ -252,7 +252,7 @@ async function askGeminiFootball(question) {
         ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 350
+          maxOutputTokens: 700
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
@@ -269,13 +269,18 @@ async function askGeminiFootball(question) {
     throw new Error(data.error?.message || "Gemini request failed.");
   }
 
-  const answer = data.candidates?.[0]?.content?.parts
+  const candidate = data.candidates?.[0];
+  const answer = candidate?.content?.parts
     ?.map((part) => part.text || "")
     .join("")
     .trim();
 
   if (!answer) {
     throw new Error("Gemini returned an empty answer.");
+  }
+
+  if (candidate.finishReason === "MAX_TOKENS") {
+    return `${answer.replace(/[,\s]+$/, "")}...`;
   }
 
   return answer;
