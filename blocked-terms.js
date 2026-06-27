@@ -1,4 +1,18 @@
 module.exports = [
+  "bastard",
+  "bitch",
+  "cunt",
+  "dickhead",
+  "faggot",
+  "fuck",
+  "hitler",
+  "kike",
+  "nazi",
   "nigger",
-  "rapist"
+  "paki",
+  "rape",
+  "rapist",
+  "retard",
+  "slut",
+  "whore"
 ];
