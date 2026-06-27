@@ -16,8 +16,6 @@ const roasts = require("./roasts");
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const SPORTDB_API_KEY = process.env.SPORTDB_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const API_BASE_URL = "https://api.sportdb.dev";
 
 if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !SPORTDB_API_KEY) {
@@ -57,16 +55,6 @@ const commands = [
         .setDescription("Club name, for example Arsenal")
         .setRequired(true)
     )
-    .toJSON(),
-  new SlashCommandBuilder()
-    .setName("askfootball")
-    .setDescription("Ask an AI a football question")
-    .addStringOption((option) =>
-      option
-        .setName("question")
-        .setDescription("Ask about tactics, history, players, clubs, or football debates")
-        .setRequired(true)
-    )
     .toJSON()
 ];
 
@@ -103,8 +91,6 @@ const CACHE = {
   player: new Map(),
   team: new Map()
 };
-const AI_COOLDOWN_MS = 30 * 1000;
-const AI_COOLDOWNS = new Map();
 
 function normalizeText(value) {
   return String(value || "")
@@ -203,102 +189,6 @@ function buildRoastEmbed(club, reply, interaction) {
   }
 
   return embed;
-}
-
-function truncateText(value, maxLength) {
-  const text = String(value || "").trim();
-  if (text.length <= maxLength) {
-    return text;
-  }
-
-  return `${text.slice(0, maxLength - 3).trim()}...`;
-}
-
-function getCooldownRemainingMs(userId) {
-  const availableAt = AI_COOLDOWNS.get(userId) || 0;
-  return Math.max(availableAt - Date.now(), 0);
-}
-
-function setAiCooldown(userId) {
-  AI_COOLDOWNS.set(userId, Date.now() + AI_COOLDOWN_MS);
-}
-
-async function askGeminiFootball(question) {
-  if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not configured.");
-  }
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
-            {
-              text:
-                "You are a football-only Discord assistant. Answer questions about football tactics, clubs, players, history, rules, transfers, and debates. If a question is not about football, briefly say you can only answer football questions. Do not use slurs, abusive insults, sexual content, threats, hate, harassment, or tragedy jokes. Do not present live stats as certain unless the user provided them. Keep answers under 120 words and always end with a complete sentence."
-            }
-          ]
-        },
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: question }]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 700
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
-        ]
-      })
-    }
-  );
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error?.message || "Gemini request failed.");
-  }
-
-  const candidate = data.candidates?.[0];
-  const answer = candidate?.content?.parts
-    ?.map((part) => part.text || "")
-    .join("")
-    .trim();
-
-  if (!answer) {
-    throw new Error("Gemini returned an empty answer.");
-  }
-
-  if (candidate.finishReason === "MAX_TOKENS") {
-    return `${answer.replace(/[,\s]+$/, "")}...`;
-  }
-
-  return answer;
-}
-
-function buildFootballAnswerEmbed(question, answer, interaction) {
-  return new EmbedBuilder()
-    .setTitle("Football Q&A")
-    .setDescription(truncateText(answer, 3800))
-    .setColor(0x1f8b4c)
-    .addFields({
-      name: "Question",
-      value: truncateText(question, 900)
-    })
-    .setFooter({
-      text: `Asked by ${getInteractionDisplayName(interaction)}`,
-      iconURL: interaction.user.displayAvatarURL()
-    });
 }
 
 function getCached(map, key) {
@@ -780,54 +670,6 @@ client.on("interactionCreate", async (interaction) => {
 
     const embed = buildRoastEmbed(roast.club, roast.reply, interaction);
     await safeReply(interaction, { embeds: [embed] });
-    return;
-  }
-
-  if (interaction.commandName === "askfootball") {
-    const question = interaction.options.getString("question", true).trim();
-
-    if (isBlockedQuery(question)) {
-      await safeReply(interaction, "That question contains a blocked term.");
-      return;
-    }
-
-    if (!GEMINI_API_KEY) {
-      await safeReply(interaction, "Gemini is not configured yet. Add GEMINI_API_KEY to the bot environment.");
-      return;
-    }
-
-    const cooldownRemainingMs = getCooldownRemainingMs(interaction.user.id);
-    if (cooldownRemainingMs > 0) {
-      await safeReply(
-        interaction,
-        `Slow down a bit. You can ask another AI football question in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
-      );
-      return;
-    }
-
-    setAiCooldown(interaction.user.id);
-
-    try {
-      await interaction.deferReply();
-    } catch (error) {
-      if (error.code === 10062 || error.code === 40060) {
-        console.error("Failed to acknowledge interaction:", error.message);
-        return;
-      }
-
-      throw error;
-    }
-
-    try {
-      const answer = await askGeminiFootball(question);
-      const embed = buildFootballAnswerEmbed(question, answer, interaction);
-      await safeReply(interaction, { embeds: [embed] });
-    } catch (error) {
-      console.error("Ask football command failed:", error.message);
-      AI_COOLDOWNS.delete(interaction.user.id);
-      await safeReply(interaction, "I could not answer that football question right now.");
-    }
-
     return;
   }
 
